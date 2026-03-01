@@ -120,6 +120,7 @@ def grasshopper_usage_strategy() -> str:
 
     2. Definition Exploration:
        - Use get_definition_info() to get an overview of components and parameters in the definition
+       - Use capture_grasshopper_canvas() to take a screenshot of the active canvas
 
     4. Code Execution Guidelines:
        - Always use IronPython 2.7 compatible code (no f-strings, no walrus operator, etc.)

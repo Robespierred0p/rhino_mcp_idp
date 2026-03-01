@@ -136,6 +136,7 @@ class RhinoTools:
         self.app.tool()(self.execute_rhino_code)
         self.app.tool()(self.get_rhino_selected_objects)
         self.app.tool()(self.look_up_RhinoScriptSyntax)
+        self.app.tool()(self.capture_grasshopper_canvas)
     
     def get_rhino_scene_info(self, ctx: Context) -> str:
         """Get basic information about the current Rhino scene.
@@ -248,6 +249,41 @@ class RhinoTools:
                 
         except Exception as e:
             logger.error("Error capturing viewport: {0}".format(str(e)))
+            raise
+
+    def capture_grasshopper_canvas(self, ctx: Context) -> Image:
+        """Capture the current Grasshopper canvas as an image.
+        
+        Returns:
+            An MCP Image object containing the canvas capture
+        """
+        try:
+            connection = get_rhino_connection()
+            result = connection.send_command("capture_grasshopper_canvas", {})
+            
+            if result.get("type") == "image":
+                # Get base64 data from Rhino
+                base64_data = result["source"]["data"]
+                
+                # Convert base64 to bytes
+                image_bytes = base64.b64decode(base64_data)
+                
+                # Create PIL Image from bytes
+                img = PILImage.open(io.BytesIO(image_bytes))
+                
+                # Convert to PNG format for better quality and consistency
+                png_buffer = io.BytesIO()
+                img.save(png_buffer, format="PNG")
+                png_bytes = png_buffer.getvalue()
+                
+                # Return as MCP Image object
+                return Image(data=png_bytes, format="png")
+                
+            else:
+                raise Exception(result.get("text", "Failed to capture grasshopper canvas"))
+                
+        except Exception as e:
+            logger.error("Error capturing grasshopper canvas: {0}".format(str(e)))
             raise
 
     def execute_rhino_code(self, ctx: Context, code: str) -> str:
