@@ -403,13 +403,22 @@ class RhinoTools:
         """Execute arbitrary Python code in Rhino.
         
         IMPORTANT NOTES FOR CODE EXECUTION:
-        0. This runs on Rhino 8's CPython 3.9.10 - f-strings, type hints, walrus operator, comprehensions, and other modern Python features all work fine
-        1. rhinoscriptsyntax as rs, scriptcontext as sc, json, time, and datetime are pre-imported in the exec context
-        2. `import idpartners` works (the library is on sys.path at startup)
-        3. When creating objects, ALWAYS call add_rhino_object_metadata(name, description) after creation
-        4. For user interaction, you can use RhinoCommon syntax (selected_objects = rs.GetObjects("Please select some objects") etc.) prompted the suer what to do
+        0. This runs on Rhino 8's IronPython 2.7 (not CPython 3) - write Python 2.7-compatible code:
+           no f-strings, no walrus operator, no type hints, no keyword-only args. Use "{0}".format(...) instead.
+        1. Integer division floors under Python 2: `800/1920` == 0, not 0.41666 - use `float(...)` explicitly
+           when you want a fractional result.
+        2. rhinoscriptsyntax as rs, scriptcontext as sc, json, time, and datetime are pre-imported in the exec context
+        3. `import idpartners` does NOT work - it fails under IronPython 2 with a PEP 263 non-ASCII/encoding error.
+        4. print() output is NOT captured - under Python 2, print is a statement, so the injected capture
+           function is bypassed and printed_output comes back empty. Write values to a file and read them
+           back, or return them via a result variable.
+        5. Non-ASCII is dangerous - decoding names with e.g. German umlauts has raised `'unknown' codec
+           can't decode byte 0xf6`. The built-in scene queries are guarded by _safe_str(), but be careful
+           with your own string handling.
+        6. When creating objects, ALWAYS call add_rhino_object_metadata(name, description) after creation
+        7. For user interaction, you can use RhinoCommon syntax (selected_objects = rs.GetObjects("Please select some objects") etc.) prompted the suer what to do
            but prefer automated solutions unless user interaction is specifically requested
-        5. Always show the user the code you are executing
+        8. Always show the user the code you are executing
 
         The add_rhino_object_metadata() function is provided in the code context and must be called
         after creating any object. It adds standardized metadata including:

@@ -58,8 +58,17 @@ def rhino_creation_strategy() -> str:
        - Think about grouping objects (e.g. two planes that form a window)
 
     3. Code Execution:
-       - This runs on Rhino 8's CPython 3.9.10 - f-strings, type hints, walrus operator, and other modern
-         Python features all work fine
+       - This runs on Rhino 8's IronPython 2.7 (not CPython 3) - write Python 2.7-compatible code: no
+         f-strings, no walrus operator, no type hints, no keyword-only args. Use "{0}".format(...) instead.
+       - Integer division floors under Python 2: `800/1920` == 0, not 0.41666 - use `float(...)` explicitly
+         when you want a fractional result.
+       - `import idpartners` does NOT work - it fails under IronPython 2 with a PEP 263 non-ASCII/encoding error.
+       - print() output is NOT captured - Python 2's print is a statement, so the injected capture function
+         is bypassed and printed_output comes back empty. Write values to a file and read them back, or
+         return them via a result variable.
+       - Non-ASCII is dangerous - decoding names with e.g. German umlauts has raised `'unknown' codec can't
+         decode byte 0xf6`. Built-in scene queries are guarded by _safe_str(), but be careful with your own
+         string handling.
        - Prefer automated solutions over user interaction, unless its requested or it makes sense or you struggle with errors
        - You can use rhino command syntax to ask the user questions e.g. "should i do "A" or "B"" where A,B are clickable options
        - If you got an error related to the RhinoScriptSyntax, always use the look_up_RhinoScriptSyntax tool to look up the correct syntax
