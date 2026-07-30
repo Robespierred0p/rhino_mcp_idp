@@ -138,37 +138,140 @@ class RhinoTools:
         self.app.tool()(self.look_up_RhinoScriptSyntax)
         self.app.tool()(self.capture_grasshopper_canvas)
     
-    def get_rhino_scene_info(self, ctx: Context) -> str:
-        """Get basic information about the current Rhino scene.
-        
-        This is a lightweight function that returns basic scene information:
-        - the Unit of Measure of current file
-        - List of all layers with basic information about the layer and 5 sample objects with their metadata 
-        - No metadata or detailed properties
-        - Use this for quick scene overview or when you only need basic object information
-        
+    def get_rhino_scene_info(
+        self,
+        ctx: Context,
+        layer_prefix: Optional[str] = None,
+        depth: int = 2,
+        include_hidden: bool = True,
+        max_nodes: int = 500,
+    ) -> str:
+        """Get a summary-first, drill-down view of the current Rhino scene's layer tree.
+
+        This model can be huge (hundreds of thousands of objects across
+        thousands of nested layers), so this does NOT return every layer or
+        every object - it returns a rolled-up layer tree, aggregated only
+        `depth` levels deep, so you can see where the object mass is before
+        deciding where to look closer.
+
+        RECOMMENDED WORKFLOW:
+        1. Call with no arguments first. You get `totals` (objects, layers,
+           instance definitions, visible vs. hidden counts) plus a
+           `layer_tree` of top-level nodes (depth=2 by default). Each node
+           has TWO object counts, and they mean different things:
+             - `object_count` is the TRUE SUBTREE total: this layer plus
+               every real layer nested beneath it, at ANY depth - even far
+               past the `depth` cutoff used to decide which nodes are
+               shown. It is CUMULATIVE, so a parent's object_count already
+               includes its children's, grandchildren's, etc. Because of
+               that overlap, NEVER sum object_count across sibling or
+               parent/child nodes to get a document total - use
+               `totals.objects` for that instead.
+             - `direct_object_count` is the unambiguous count of objects
+               placed directly on this exact layer only, excluding every
+               descendant. Use this when you need a non-overlapping figure.
+           Each node also has `descendant_layers` (how many real layers
+           exist strictly beneath it, at any depth - 0 means a genuine
+           leaf with no children) and `has_children` (just
+           `descendant_layers > 0`). A node can easily show
+           `direct_object_count: 0` with a large `object_count` and
+           `has_children: true` - that means nothing is placed on the
+           layer itself, but its descendants hold plenty; do not treat a
+           zero direct count as "empty," check has_children/descendant_layers.
+        2. Pick the node(s) with the object_count or has_children that
+           interest you, then call again with `layer_prefix` set to that
+           node's `path` (e.g. "02_SYMBOLIC MODEL") to descend into just
+           that subtree. `depth` then counts levels *below* the prefix, so
+           you can keep drilling deeper one call at a time instead of
+           requesting the whole tree at once.
+        3. Only when a node is a genuine leaf (descendant_layers == 0, i.e.
+           a single real layer with no children of its own) AND you
+           supplied `layer_prefix` does the response include up to 5
+           `example_objects` for that layer (id, name, type, metadata) -
+           this keeps the no-prefix orientation call cheap and avoids
+           dumping object data for branches you haven't asked about yet.
+
+        Hidden objects are included by default (include_hidden=True) - a
+        prior version of this tool silently excluded them, which meant the
+        agent was only ever seeing a small fraction of the real model.
+        `totals.objects_on_hidden_layers` tells you how much of the model is
+        currently switched off in the viewport.
+
+        If a response gets clipped by `max_nodes`, `truncated` is set to
+        True - narrow with `layer_prefix` or increase `max_nodes` rather
+        than assuming the tree is complete.
+
+        Args:
+            layer_prefix: Restrict the tree to this layer subtree (e.g.
+                "02_SYMBOLIC MODEL", or a deeper path like
+                "02_SYMBOLIC MODEL::Facade"). Omit for a full top-level
+                overview.
+            depth: How many "::" levels deep to aggregate, counted below
+                layer_prefix when one is given. Default 2.
+            include_hidden: Whether to include objects that are hidden or on
+                hidden layers. Default True - see the whole model, not just
+                what's currently visible in the viewport.
+            max_nodes: Hard cap on the number of tree nodes returned, as a
+                safety limit against extremely wide layer trees. Default 500.
+
         Returns:
-            JSON string containing basic scene information
+            JSON string with `unit_system`, `totals`, and `layer_tree`
+            (a list of nodes, each with path/object_count/direct_object_count/
+            descendant_layers/is_visible/is_locked/has_children, plus
+            example_objects on drilled-into leaves). Reminder: object_count
+            is cumulative across each node's true subtree and overlaps with
+            its ancestors/descendants - sum totals.objects for a document
+            total, never the per-node object_count values.
         """
         try:
             connection = get_rhino_connection()
-            result = connection.send_command("get_rhino_scene_info")
+            result = connection.send_command("get_rhino_scene_info", {
+                "layer_prefix": layer_prefix,
+                "depth": depth,
+                "include_hidden": include_hidden,
+                "max_nodes": max_nodes
+            })
             return json.dumps(result, indent=2)
         except Exception as e:
             logger.error("Error getting scene info from Rhino: {0}".format(str(e)))
             return "Error getting scene info: {0}".format(str(e))
 
-    def get_rhino_layers(self, ctx: Context) -> str:
-        """Get list of layers in Rhino"""
+    def get_rhino_layers(self, ctx: Context, layer_prefix: Optional[str] = None, max_layers: int = 1000) -> str:
+        """Get a flat list of individual layers with their own (non-rolled-up) object counts.
+
+        Unlike get_rhino_scene_info (which aggregates into a depth-limited
+        tree), this returns one entry per real layer: index, name,
+        full_path, is_visible, is_locked, and object_count (objects directly
+        on that layer, including hidden/locked ones - not descendants).
+        This model can have several thousand layers, so use layer_prefix to
+        scope to a subtree once you know roughly where you want to look
+        (e.g. from get_rhino_scene_info's layer_tree), rather than pulling
+        every layer at once.
+
+        Args:
+            layer_prefix: Optional layer path to restrict results to - only
+                this layer and its descendants are returned (e.g.
+                "02_SYMBOLIC MODEL").
+            max_layers: Hard cap on the number of layers returned. Default
+                1000. If more layers match, the response's `truncated` flag
+                is set to True - narrow with layer_prefix rather than
+                assuming the list is complete.
+
+        Returns:
+            JSON string with `layers` (list) and `truncated` (bool).
+        """
         try:
             connection = get_rhino_connection()
-            result = connection.send_command("get_rhino_layers")
+            result = connection.send_command("get_rhino_layers", {
+                "layer_prefix": layer_prefix,
+                "max_layers": max_layers
+            })
             return json.dumps(result, indent=2)
         except Exception as e:
             logger.error("Error getting layers from Rhino: {0}".format(str(e)))
             return "Error getting layers: {0}".format(str(e))
 
-    def get_rhino_objects_with_metadata(self, ctx: Context, filters: Optional[Dict[str, Any]] = None, metadata_fields: Optional[List[str]] = None) -> str:
+    def get_rhino_objects_with_metadata(self, ctx: Context, filters: Optional[Dict[str, Any]] = None, metadata_fields: Optional[List[str]] = None, include_hidden: bool = True) -> str:
         """Get detailed information about objects in the scene with their metadata.
         
         This is a CORE FUNCTION for scene context awareness. It provides:
@@ -189,11 +292,20 @@ class RhinoTools:
         3. Field selection:
            - Can specify which metadata fields to return
            - Useful for reducing response size when only certain fields are needed
-        
+
+        This scans every object matching your filters, so on a large model
+        prefer narrowing with `filters` (especially `layer`, ideally scoped
+        via a layer_prefix you found through get_rhino_scene_info) rather
+        than calling this unfiltered.
+
         Args:
             filters: Optional dictionary of filters to apply
             metadata_fields: Optional list of specific metadata fields to return
-        
+            include_hidden: Whether to include objects that are hidden or on
+                hidden layers. Default True - matches get_rhino_scene_info's
+                default so results from both tools stay consistent with
+                each other.
+
         Returns:
             JSON string containing filtered objects with their metadata
         """
@@ -201,7 +313,8 @@ class RhinoTools:
             connection = get_rhino_connection()
             result = connection.send_command("get_rhino_objects_with_metadata", {
                 "filters": filters or {},
-                "metadata_fields": metadata_fields
+                "metadata_fields": metadata_fields,
+                "include_hidden": include_hidden
             })
             return json.dumps(result, indent=2)
         except Exception as e:
