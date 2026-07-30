@@ -75,9 +75,17 @@ def rhino_creation_strategy() -> str:
     access the geometry specific properties (such as corner points etc.) to create more complex scenes with spatial consistency. Start from sparse to detail (e.g. first the building plot, then the wall, then the window etc. - it is crucial to use metadata to be able to do that)
 
     1. Scene Context Awareness:
-       - Always start by checking the scene using get_rhino_scene_info() for basic overview
+       - Always start by calling get_rhino_scene_info() with NO arguments for orientation - it returns
+         `totals` plus a depth-2 layer-tree rollup, not every layer. On large models this can be
+         hundreds of thousands of objects across thousands of layers, so don't dump everything at once.
+       - A node's object_count is a cumulative subtree total that overlaps between ancestors and
+         descendants - never sum it across nodes; totals.objects is authoritative. direct_object_count
+         is the non-overlapping per-layer figure. descendant_layers == 0 means a genuine leaf.
+       - Then pass layer_prefix to drill into a branch, and use get_rhino_objects_with_metadata() for
+         object-level detail.
+       - Hidden objects are included by default, flagged via per-layer is_visible/is_locked - don't
+         assume an invisible layer is empty.
        - Use the capture_rhino_viewport to get an image from viewport to get a quick overview of the scene
-       - Use get_rhino_objects_with_metadata() for detailed object information and filtering
        - The short_id in metadata can be displayed in viewport using capture_rhino_viewport()
 
     2. Object Creation and Management:
@@ -90,13 +98,16 @@ def rhino_creation_strategy() -> str:
         - Items have the right spatial relationship.
 
     4. Code Execution:
-       - This is Rhino 7 with IronPython 2.7 - no f-strings or modern Python features etc
+       - This runs on Rhino 8's CPython 3.9.10 - f-strings, type hints, walrus operator, and other modern
+         Python features all work fine
        - rhinoscriptsyntax is already imported as rs
        - scriptcontext is already imported as sc
        - json is already imported as json
        - time is already imported as time
        - datetime is already imported as datetim
-       - DONT FORGET NO f-strings! No f-strings, No f-strings!
+       - `import idpartners` works (the library is on sys.path at startup)
+       - Avoid scanning `for layer in doc.Layers: [o for o in doc.Objects if ...]` on large models -
+         bucket objects by obj.Attributes.LayerIndex in one pass instead
        - Prefer automated solutions over user interaction, unless its requested or it makes sense or you struggle with errors
        - You can always use the look_up_RhinoScriptSyntax() function to look up the documentation for a RhinoScriptSyntax function directly from the Rhino3D developer website.
 
@@ -123,8 +134,8 @@ def grasshopper_usage_strategy() -> str:
        - Use capture_grasshopper_canvas() to take a screenshot of the active canvas
 
     4. Code Execution Guidelines:
-       - Always use IronPython 2.7 compatible code (no f-strings, no walrus operator, etc.)
-       - you can create grashopper componetns via code 
+       - This runs on Rhino 8's CPython 3.9.10 - f-strings, type hints, and other modern Python features all work fine
+       - you can create grashopper componetns via code
        - you can access rhino objects by referencing them
 
     """

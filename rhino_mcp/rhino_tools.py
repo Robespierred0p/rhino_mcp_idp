@@ -403,25 +403,36 @@ class RhinoTools:
         """Execute arbitrary Python code in Rhino.
         
         IMPORTANT NOTES FOR CODE EXECUTION:
-        0. DONT FORGET NO f-strings! No f-strings, No f-strings!
-        1. This is Rhino 7 with IronPython 2.7 - no f-strings or modern Python features
+        0. This runs on Rhino 8's CPython 3.9.10 - f-strings, type hints, walrus operator, comprehensions, and other modern Python features all work fine
+        1. rhinoscriptsyntax as rs, scriptcontext as sc, json, time, and datetime are pre-imported in the exec context
+        2. `import idpartners` works (the library is on sys.path at startup)
         3. When creating objects, ALWAYS call add_rhino_object_metadata(name, description) after creation
-        4. For user interaction, you can use RhinoCommon syntax (selected_objects = rs.GetObjects("Please select some objects") etc.) prompted the suer what to do 
+        4. For user interaction, you can use RhinoCommon syntax (selected_objects = rs.GetObjects("Please select some objects") etc.) prompted the suer what to do
            but prefer automated solutions unless user interaction is specifically requested
-        5. Always show the user the code you are executing   
-        
+        5. Always show the user the code you are executing
+
         The add_rhino_object_metadata() function is provided in the code context and must be called
         after creating any object. It adds standardized metadata including:
         - name (provided by you)
         - description (provided by you)
         The metadata helps you to identify and select objects later in the scene and stay organised.
 
-        Common Syntax Errors to Avoid:
-        2. No walrus operator (:=)
-        3. No type hints
-        4. No modern Python features (match/case, etc.)
-        5. No list/dict comprehensions with multiple for clauses
-        6. No assignment expressions in if/while conditions
+        GOTCHA - exec scoping: code runs via exec(code, exec_globals, local_dict), so top-level
+        assignments land in *locals* while a function body's global lookup uses *exec_globals*.
+        This raises NameError:
+            srv = sc.sticky.get("mcp_server")
+            def helper():
+                return srv.foo()      # NameError: name 'srv' is not defined
+        Pass such values in as parameters instead, or keep the code flat.
+
+        Scene queries on large models:
+        - Avoid `for layer in doc.Layers: [o for o in doc.Objects if ...]` - that's O(layers x objects)
+          and can freeze Rhino for minutes on big models. Bucket objects by obj.Attributes.LayerIndex
+          in a single pass instead.
+        - A bare `for obj in doc.Objects` uses default ObjectEnumeratorSettings (HiddenObjects=False)
+          and silently skips hidden objects. Use doc.Objects.GetObjectList(settings) with
+          HiddenObjects=True to include them. Do NOT set IdefObjects=True (returns 0 objects).
+        - Layer.ObjectCount does not exist in Rhino 8.
 
         Example of proper object creation:
         <<<python
